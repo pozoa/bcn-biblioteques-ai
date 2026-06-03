@@ -48,6 +48,23 @@ bcn-biblioteques-ai/
 
 No cal instal·lar paquets amb `pip`.
 
+## Fitxers necessaris
+
+Per executar el projecte, el ZIP o el repositori ha d'incloure aquests fitxers:
+
+```text
+app.py
+index.html
+styles.css
+script.js
+2024_dades_biblioteques.csv
+ejecutar_local.sh
+ejecutar_local.bat
+README.md
+```
+
+La carpeta `__pycache__` no és necessària. Python la crea automàticament quan s'executa l'aplicació, per això està ignorada a `.gitignore` i no cal pujar-la a GitHub.
+
 ## Descarregar el projecte des de GitHub
 
 ### Opció 1: descarregar ZIP
@@ -111,6 +128,8 @@ Si Windows no reconeix `python`, prova:
 ```bat
 py app.py
 ```
+
+Si l'usuari descarrega el projecte com a ZIP, només ha de descomprimir-lo abans d'executar aquests passos.
 
 ## Obrir l'aplicació al navegador
 
