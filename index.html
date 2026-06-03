@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ca">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Assistent Biblioteques Barcelona 2024</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel">
+        <div class="header">
+          <div>
+            <p class="eyebrow">CSV 2024 · Biblioteques de Barcelona</p>
+            <h1>Assistent de dades</h1>
+          </div>
+          <span class="status">Local</span>
+        </div>
+
+        <div id="messages" class="messages" aria-live="polite">
+          <article class="message assistant">
+            <p>Pregunta per visites, préstecs, metres quadrats, recomptes per districte o barri, rànquings i dades d'una biblioteca concreta.</p>
+          </article>
+        </div>
+
+        <form id="chat-form" class="composer">
+          <input
+            id="question"
+            type="text"
+            autocomplete="off"
+            placeholder="Exemple: quin és el total de visites acumulades?"
+            aria-label="Pregunta per a l'assistent"
+          >
+          <button type="submit">Envia</button>
+        </form>
+      </section>
+
+      <aside class="examples">
+        <h2>Preguntes ràpides</h2>
+        <button type="button" data-question="Quin és el total de visites acumulades a totes les biblioteques de Barcelona durant el 2024?">
+          Total de visites
+        </button>
+        <button type="button" data-question="Quina és la mitjana de metres_quadrats de les biblioteques analitzades?">
+          Mitjana de metres quadrats
+        </button>
+        <button type="button" data-question="Quantes biblioteques úniques hi ha registrades al fitxer?">
+          Biblioteques úniques
+        </button>
+        <button type="button" data-question="Digue'm la quantitat de biblioteques per districte">
+          Biblioteques per districte
+        </button>
+        <button type="button" data-question="Total de visites per districte">
+          Visites per districte
+        </button>
+        <button type="button" data-question="Top 5 biblioteques per Prestecs_presencials">
+          Top préstecs
+        </button>
+        <button type="button" data-question="Quina biblioteca ha fet més préstecs presencials respecte dels virtuals?">
+          Presencials respecte de virtuals
+        </button>
+      </aside>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>
