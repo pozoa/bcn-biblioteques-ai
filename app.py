@@ -2,19 +2,93 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import unicodedata
 import webbrowser
 from collections import defaultdict
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
 CSV_PATH = BASE_DIR / "2024_dades_biblioteques.csv"
 HOST = "127.0.0.1"
 PORT = 8000
+
+
+def load_dotenv(dotenv_path: Path) -> None:
+    if not dotenv_path.exists():
+        return
+
+    with dotenv_path.open(encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+
+load_dotenv(BASE_DIR / ".env")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+USE_GROQ = os.getenv("USE_GROQ", "false").lower() in ("1", "true", "yes")
+GROQ_API_URL = os.getenv("GROQ_API_URL", "https://api.groq.ai/v1")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "groq")
+
+# Optional HTTP client: prefer requests when available, fall back to urllib
+try:
+    import requests
+    _HAS_REQUESTS = True
+except Exception:
+    import urllib.request as _urllib_request
+    import urllib.error as _urllib_error
+    _HAS_REQUESTS = False
+
+
+def query_groq(prompt: str, max_tokens: int = 512) -> str | None:
+    """Send a prompt to Groq-like HTTP endpoint and return generated text.
+
+    The exact endpoint and payload shape may vary between providers; this
+    implementation posts JSON to ``GROQ_API_URL + '/generate'`` with keys
+    ``model``, ``prompt`` and ``max_tokens``. Adjust `GROQ_API_URL`/`GROQ_MODEL`
+    in your environment if required by your Groq plan.
+    """
+    if not GROQ_API_KEY:
+        return None
+
+    url = GROQ_API_URL.rstrip("/") + "/generate"
+    payload = {"model": GROQ_MODEL, "prompt": prompt, "max_tokens": max_tokens}
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+
+    try:
+        if _HAS_REQUESTS:
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+        else:
+            req = _urllib_request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with _urllib_request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+        # Try to extract a human-facing text from common API shapes
+        if isinstance(data, dict):
+            if "text" in data:
+                return data["text"]
+            if "output" in data:
+                return data["output"]
+            if "generated_text" in data:
+                return data["generated_text"]
+            choices = data.get("choices")
+            if isinstance(choices, list) and choices:
+                first = choices[0]
+                return first.get("text") or first.get("message") or json.dumps(first, ensure_ascii=False)
+        return str(data)
+    except Exception:
+        return None
 
 
 def normalize(text: str) -> str:
@@ -206,7 +280,7 @@ class LibraryData:
         labels = {
             "Any": "any",
             "Indicador": "indicador",
-            "Nom_Equipament": "biblioteca",
+            "Nom_Equipament": "NombreBiblioteca",
             "Valor": "valor",
             "Notes_Dades": "notes de dades",
             "Notes_Equipament": "notes d'equipament",
@@ -364,12 +438,58 @@ class LibraryData:
             + "\n".join(metrics)
         )
 
+    def maps_url_for_library(self, library: str) -> str | None:
+        """Return a Google Maps search URL for the library if lat/lon available."""
+        try:
+            base_row = next(row for row in self.rows if row["Nom_Equipament"] == library)
+        except StopIteration:
+            return None
+        lat = base_row.get("Latitud")
+        lon = base_row.get("Longitud")
+        if not lat or not lon:
+            return None
+        # Clean commas and whitespace
+        lat = lat.strip().replace(",", ".")
+        lon = lon.strip().replace(",", ".")
+        try:
+            float(lat)
+            float(lon)
+        except ValueError:
+            return None
+        return f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+
     def extract_limit(self, question: str, default: int = 5) -> int:
         match = re.search(r"\btop\s+(\d+)\b|\b(\d+)\s+(primer|mejor|mayor|menor)", normalize(question))
         if not match:
             return default
         number = match.group(1) or match.group(2)
         return max(1, min(int(number), 20))
+
+    def get_context(self, question: str, limit: int = 8) -> str:
+        """Build a short textual context from the CSV rows relevant to `question`.
+
+        Preference order: mentioned library rows, indicator rows, otherwise sample rows.
+        """
+        indicator = self.indicator_from_question(question)
+        library = self.mentioned_library(question)
+        rows = []
+        if library:
+            rows = [row for row in self.rows if row["Nom_Equipament"] == library][:limit]
+        elif indicator:
+            rows = [row for row in self.rows if row["Indicador"] == indicator][:limit]
+        else:
+            rows = self.rows[:limit]
+
+        lines = []
+        for row in rows:
+            parts = [
+                row.get("Nom_Equipament", ""),
+                row.get("Nom_Districte", ""),
+                row.get("Nom_Barri", ""),
+                f"{row.get('Indicador','')}: {row.get('Valor','')}",
+            ]
+            lines.append(" | ".join(p for p in parts if p))
+        return "\n".join(lines)
 
     def is_count_question(self, normalized_question: str) -> bool:
         count_words = [
@@ -435,7 +555,8 @@ class LibraryData:
             return {"answer": self.dataset_summary()}
 
         if any(word in normalized_question for word in ["columnas", "campos", "variables", "columnes", "camps"]):
-            return {"answer": f"Les columnes del CSV són: {', '.join(self.columns)}."}
+            display_columns = ["NombreBiblioteca" if c == "Nom_Equipament" else c for c in self.columns]
+            return {"answer": f"Les columnes del CSV són: {', '.join(display_columns)}."}
 
         if "bibliotecas unicas" in normalized_question or "biblioteques uniques" in normalized_question:
             return {"answer": f"Hi ha {len(self.libraries)} biblioteques úniques registrades al fitxer."}
@@ -450,6 +571,17 @@ class LibraryData:
             return {"answer": self.count_libraries_by_column(group_column)}
 
         library = self.mentioned_library(clean_question)
+        # If the question mentions a library and asks for coordinates/maps, respond with a maps_url
+        coord_words = ["coorden", "latitud", "longitud", "coordenadas", "maps", "mapa", "google"]
+        if library and any(w in normalized_question for w in coord_words):
+            maps = self.maps_url_for_library(library)
+            if maps:
+                lat = next((row.get("Latitud") for row in self.rows if row["Nom_Equipament"] == library), "")
+                lon = next((row.get("Longitud") for row in self.rows if row["Nom_Equipament"] == library), "")
+                answer = f"Coordenades de {library}: {lat}, {lon}"
+                return {"answer": answer, "maps_url": maps}
+            return {"answer": "No hi ha coordenades disponibles per aquesta biblioteca."}
+
         if library and any(word in normalized_question for word in ["datos", "info", "informacion", "ficha", "perfil", "dades", "fitxa"]):
             return {"answer": self.library_profile(library)}
 
@@ -481,6 +613,18 @@ class LibraryData:
         column = self.column_from_question(clean_question)
         if column:
             return {"answer": self.unique_column_values(column)}
+
+        # If configured, ask Groq (or compatible) model using a small CSV context
+        if USE_GROQ and GROQ_API_KEY:
+            context = self.get_context(clean_question, limit=8)
+            prompt = (
+                "Ets un assistent expert en dades de biblioteques. RESPON USANT NOMÉS "
+                "LES DADES DONADES a continuació i la pregunta. Sigues concís i clar.\n\n"
+                f"DADES:\n{context}\n\nPREGUNTA: {clean_question}\n\nRESPUESTA:"
+            )
+            generated = query_groq(prompt)
+            if generated:
+                return {"answer": generated}
 
         return {
             "answer": (
@@ -522,6 +666,71 @@ class AssistantHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/indicators":
+            # Return list of indicators
+            self._send_json({"indicators": DATA.indicators})
+            return
+        if parsed_path.path == "/api/wide":
+            # Return pivoted table: one object per library with indicators as fields
+            wide = []
+            for lib in sorted(DATA.libraries):
+                row = {"Any": None, "NombreBiblioteca": lib}
+                # attach indicators
+                values = DATA.by_library.get(lib, {})
+                for ind in DATA.indicators:
+                    row[ind] = values.get(ind, 0.0)
+                # include district/barri metadata from first matching CSV row
+                base_row = next((r for r in DATA.rows if r["Nom_Equipament"] == lib), None)
+                if base_row:
+                    row["Nom_Districte"] = base_row.get("Nom_Districte")
+                    row["Nom_Barri"] = base_row.get("Nom_Barri")
+                    row["Latitud"] = base_row.get("Latitud")
+                    row["Longitud"] = base_row.get("Longitud")
+                wide.append(row)
+            self._send_json({"wide": wide})
+            return
+        if parsed_path.path == "/api/column":
+            # Return all values for a requested column. Query param: ?col=Nom_Equipament&unique=true
+            params = parse_qs(parsed_path.query)
+            col = params.get("col", [None])[0]
+            unique = params.get("unique", ["false"])[0].lower() in ("1", "true", "yes")
+            if not col:
+                self._send_json({"error": "missing col parameter"}, status=400)
+                return
+            values = [row.get(col, "") for row in DATA.rows if col in row]
+            if unique:
+                seen = []
+                for v in values:
+                    if v not in seen:
+                        seen.append(v)
+                values = seen
+            self._send_json({"count": len(values), "values": values})
+            return
+        if parsed_path.path == "/api/library":
+            # Return all rows for a requested library name
+            params = parse_qs(parsed_path.query)
+            library = params.get("library", [None])[0]
+            if not library:
+                self._send_json({"error": "missing library parameter"}, status=400)
+                return
+            rows = [row for row in DATA.rows if row.get("Nom_Equipament") == library]
+            if not rows:
+                self._send_json({"error": "library not found"}, status=404)
+                return
+            self._send_json({"library": library, "rows": rows})
+            return
+        if parsed_path.path == "/api/schema":
+            # Return both original columns and display-friendly labels
+            original_columns = DATA.columns
+            display_columns = ["Nom Biblioteca" if c == "Nom_Equipament" else c for c in original_columns]
+            self._send_json({"columns": original_columns, "display": display_columns})
+            return
+
+        # Fall back to static file handling
+        return super().do_GET()
 
 
 def run() -> None:
