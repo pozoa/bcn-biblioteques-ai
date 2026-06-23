@@ -171,6 +171,21 @@ h2 {
   align-self: start;
   display: grid;
   gap: 10px;
+  position: sticky;
+  top: 32px;
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+}
+
+.column-shortcuts {
+  display: grid;
+  gap: 10px;
+}
+
+.small-label {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 .examples button {
@@ -180,6 +195,63 @@ h2 {
   color: var(--ink);
   border: 1px solid var(--line);
   text-align: left;
+}
+
+.value-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.value-pill {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 10px 12px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.value-pill:hover,
+.value-pill:focus-visible {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+
+.row-detail-list {
+  display: grid;
+  gap: 12px;
+}
+
+.row-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fbfa;
+}
+
+.row-card h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.row-card dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.row-card dt {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.row-card dd {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .examples button:hover,

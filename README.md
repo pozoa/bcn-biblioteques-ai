@@ -181,3 +181,50 @@ git remote add origin https://github.com/el-teu-usuari/bcn-biblioteques-ai.git
 - El fitxer CSV ha d'estar a la mateixa carpeta que `app.py`.
 - L'aplicació funciona en local; no publica les dades a internet.
 - El sistema interpreta preguntes sobre el CSV, però no utilitza una API externa d'intel·ligència artificial.
+
+## Integració opcional amb Groq (RAG)
+
+Aquest projecte pot utilitzar Groq (o un endpoint compatible) per generar respostes naturals a partir dels dades del CSV. Això és opcional i està desactivat per defecte.
+
+- Activa l'ús de Groq definint la variable d'entorn `USE_GROQ=true`.
+- Afegeix la teva clau a la variable `GROQ_API_KEY` (no la posis al codi ni al repo).
+- Opcions configurables (totes són variables d'entorn):
+	- `GROQ_API_KEY` (obligatori per usar Groq)
+	- `USE_GROQ` (true / false, per activar la integració)
+	- `GROQ_API_URL` (URL de l'API, per defecte `https://api.groq.ai/v1`)
+	- `GROQ_MODEL` (model a usar, per defecte `groq`)
+
+Exemple d'un fitxer `.env` (a la carpeta del projecte):
+
+```
+# Aquest fitxer està ignorat per Git.
+GROQ_API_KEY=sk_tu_clau_aqui
+USE_GROQ=true
+# Opcional: canvia l'endpoint o el model si cal
+GROQ_API_URL=https://api.groq.ai/v1
+GROQ_MODEL=groq
+```
+
+Precaucions:
+- No pujis `.env` al repositori. ` .gitignore` ja inclou `.env`.
+- Si per error vas pujar una clau a Git, revoca-la i genera una nova al portal de Groq.
+
+Ús ràpid:
+
+Linux / macOS (temporalment a la sessió):
+
+```bash
+export GROQ_API_KEY="tu_clau_real"
+export USE_GROQ=true
+python3 app.py
+```
+
+Windows PowerShell (temporalment a la sessió):
+
+```powershell
+$env:GROQ_API_KEY="tu_clau_real"
+$env:USE_GROQ="true"
+python app.py
+```
+
+Si tot està configurat, l'aplicació incorporarà un petit context extret del CSV i enviarà un prompt a Groq per generar la resposta.
